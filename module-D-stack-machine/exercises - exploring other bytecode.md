@@ -56,7 +56,7 @@ In this lab, you will investigate three such systems:
 
 You will use Compiler Explorer to see what actual compilers produce.
 
-> **Important:** We are interested in stack-based execution. Do not select LLVM IR, native assembly, or other register-based intermediate representations for this lab.
+> **Important:** We are interested in stack-based execution. We are not going to explore LLVM IR, native assembly, or other register-based intermediate representations in this lab.
 
 ---
 
@@ -179,7 +179,7 @@ Construct a table:
 
 You will probably notice that the JVM does not have just one instruction for pushing an integer constant.
 
-Investigate the JVM instructions used for small integer constants.
+Investigate the JVM instructions used for integer constants with different values: 0, 9, 100, 9999.
 
 Why might a real VM provide several different instructions for loading constants instead of having only:
 
@@ -425,7 +425,7 @@ If not:
 
 ## 3.3 Compare evaluation order
 
-For both implementations, determine the operand-stack evolution for:
+For both implementations above, determine the operand-stack evolution for:
 
 ```text
 x = 3
@@ -607,13 +607,12 @@ Continue until the result is produced.
 
 ---
 
-## 5.3 Compare three VMs
+## 5.3 Compare several VMs
 
 You have now seen:
 
 ```text
 JVM
-CIL
 WebAssembly
 ```
 
@@ -625,14 +624,14 @@ For the computation:
 
 compare the three instruction sequences.
 
-| Operation | JVM | CIL | WebAssembly |
-| --------- | --- | --- | ----------- |
-| Load `x`  |     |     |             |
-| Push `2`  |     |     |             |
-| Add       |     |     |             |
-| Load `y`  |     |     |             |
-| Multiply  |     |     |             |
-| Return    |     |     |             |
+| Operation | JVM | WebAssembly |
+| --------- | --- | ----------- |
+| Load `x`  |     |             |
+| Push `2`  |     |             |
+| Add       |     |             |
+| Load `y`  |     |             |
+| Multiply  |     |             |
+| Return    |     |             |
 
 ---
 
@@ -686,7 +685,7 @@ Return to **one of the VMs** you have investigated.
 
 Choose a bytecode sequence from one of the previous exercises.
 
-Find an instruction that you still do not fully understand.
+Find an instruction that you still do not fully understand, or one instruction that you don't understand why it's there (e.g., a dup or a pop in a place that seems strange).
 
 Examples might include:
 
@@ -766,7 +765,7 @@ Consider:
 
 ## Question 2 — Same idea, different instruction sets
 
-The JVM, CIL, and WebAssembly all use stack-based execution, but they have different instructions.
+The JVM and WebAssembly all use stack-based execution, but they have different instructions.
 
 Why isn't there a single universal stack-machine instruction set?
 
@@ -842,70 +841,6 @@ Why does the real VM need many more instructions?
 What kinds of operations are missing from our machine?
 
 ---
-
-# Deliverable
-
-Submit a short report containing:
-
-### Part 1 — Stack traces
-
-One complete operand-stack trace for:
-
-```text
-(x + 2) * y
-```
-
-on the JVM.
-
-### Part 2 — Control flow
-
-One annotated bytecode sequence showing how an `if` statement is implemented.
-
-### Part 3 — Different languages
-
-A comparison of the Java and Kotlin bytecode for the same computation.
-
-Include at least **one concrete difference** and explain why it occurs.
-
-### Part 4 — Different VMs
-
-A comparison of:
-
-```text
-JVM
-CIL
-WebAssembly
-```
-
-Include at least two similarities and two differences.
-
-### Part 5 — Bytecode archaeology
-
-Document one unfamiliar instruction using the official documentation:
-
-```text
-Instruction:
-VM:
-Purpose:
-Stack before:
-Stack after:
-Why the compiler generated it:
-```
-
----
-
-# Suggested Timing
-
-| Activity                               |        Time |
-| -------------------------------------- | ----------: |
-| Introduction + Compiler Explorer setup |      10 min |
-| Exercise 1 — Java/JVM arithmetic       |      20 min |
-| Exercise 2 — Java/JVM control flow     |      25 min |
-| Exercise 3 — Java vs Kotlin            |      20 min |
-| Exercise 4 — C#/CIL                    |      20 min |
-| Exercise 5 — WebAssembly               |      15 min |
-| Exercise 6 + final discussion          |      10 min |
-| **Total**                              | **120 min** |
 
 ## Recommended strategy
 
