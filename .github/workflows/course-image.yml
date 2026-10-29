@@ -1,17 +1,24 @@
 # Builds the course Pharo 13 image (VMMaker + course code), gathers the native
 # libraries VMMaker needs (Unicorn 2 and the LLVM disassembler) for Linux, macOS
 # and Windows, runs the VMMaker tests with the libraries next to the image, and
-# on releases publishes a zip with the image, sources, changes and libraries.
+# builds a zip with the image, sources, changes and libraries. Every push runs
+# the whole build; releases only differ in that the zip is kept and attached.
 
 name: Course image
 
 on:
   push:
-    branches: [main]
+    # Branches only: a tag push would duplicate the release run
+    branches: ['**']
   pull_request:
   release:
     types: [published]
   workflow_dispatch:
+
+# A new push supersedes the running build of the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   IMAGE_NAME: CompilerCourse
