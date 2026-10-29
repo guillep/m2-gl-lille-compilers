@@ -61,6 +61,15 @@ Strong focus on practice and presence. Special circumstances are taken into acco
 - One at the end of the first period (estimated 16/12)
 - One at the end of the last period (estimated 08/02)
 
+## AI Policy
+
+We all use AI. You use AI. We (the teachers) use AI. The real question is *do we use it right?*
+
+- **As a person**, the goal is to become better: use AI to get further, not to skip the work.
+- **As a teacher**, the goal is that you learn: use AI to learn, not just to produce answers.
+
+AI should not just *do* for you — it should help you get further. Use it to explore, question, and understand; make sure you can explain and defend whatever you submit.
+
 ## Communication — Discord
 
 Discord is the communication channel to find admin info, discuss topics, and ask questions.
