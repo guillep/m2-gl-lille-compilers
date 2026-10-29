@@ -1,0 +1,296 @@
+# Builds the course Pharo 13 image (VMMaker + course code), gathers the native
+# libraries VMMaker needs (Unicorn 2 and the LLVM disassembler) for Linux, macOS
+# and Windows, runs the VMMaker tests with the libraries next to the image, and
+# on releases publishes a zip with the image, sources, changes and libraries.
+
+name: Course image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: CompilerCourse
+  # Same spec as BaselineOfSmiParser uses, so Metacello sees a single VMMaker repository
+  VMMAKER_REPOSITORY: github://pharo-project/pharo-vm:pharo-12
+  UNICORN_REPOSITORY: pharo-project/unicorn
+  UNICORN_BRANCH: pharo-vm-unicorn2
+  UNICORN_ARCHS: x86;arm;aarch64;riscv
+  LLVM_VERSION: 23.1.4
+  LLVM_TARGETS: X86;ARM;AArch64;RISCV
+
+jobs:
+  image:
+    name: Build image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Pharo 13
+        run: mkdir image && cd image && curl -fsSL https://get.pharo.org/64/130+vm | bash
+
+      - name: Load VMMaker and course code
+        working-directory: image
+        run: |
+          ./pharo Pharo.image save "$IMAGE_NAME"
+          ./pharo "$IMAGE_NAME.image" st --save --quit "$GITHUB_WORKSPACE/.github/scripts/load-image.st"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: |
+            image/${{ env.IMAGE_NAME }}.image
+            image/${{ env.IMAGE_NAME }}.changes
+            image/*.sources
+          if-no-files-found: error
+
+  unicorn:
+    name: Unicorn (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Oldest supported Ubuntu, so the library runs on older glibc too
+          - { platform: linux-x86_64, os: ubuntu-22.04 }
+          - { platform: macos-arm64, os: macos-14 }
+          - { platform: windows-x86_64, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Resolve branch commit
+        id: rev
+        run: echo "sha=$(git ls-remote "https://github.com/$UNICORN_REPOSITORY" "refs/heads/$UNICORN_BRANCH" | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: out
+          key: unicorn-${{ matrix.platform }}-${{ steps.rev.outputs.sha }}-${{ env.UNICORN_ARCHS }}
+
+      - uses: actions/checkout@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          repository: ${{ env.UNICORN_REPOSITORY }}
+          ref: ${{ steps.rev.outputs.sha }}
+          path: unicorn
+
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          # Static CRT on Windows so the DLL does not need the VC++ redistributable
+          cmake -S unicorn -B build -DCMAKE_BUILD_TYPE=Release \
+            -DUNICORN_ARCH="$UNICORN_ARCHS" -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF \
+            -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build --config Release --parallel
+
+      # File names are the ones the pharo-unicorn bindings look for
+      - name: Collect library
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p out
+          case "$RUNNER_OS" in
+            Linux)   cp -L build/libunicorn.so out/libunicorn.so ;;
+            macOS)   cp -L build/libunicorn.2.dylib out/libunicorn.2.dylib ;;
+            Windows) cp build/Release/unicorn.dll out/unicorn.dll ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unicorn-${{ matrix.platform }}
+          path: out/*
+          if-no-files-found: error
+
+  llvm:
+    name: LLVM (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x86_64, os: ubuntu-22.04 }
+          - { platform: macos-arm64, os: macos-14 }
+          - { platform: windows-x86_64, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: out
+          key: llvm-${{ matrix.platform }}-${{ env.LLVM_VERSION }}-${{ env.LLVM_TARGETS }}-v1
+
+      # The official Windows release ships the C API as LLVM-C.dll;
+      # the pharo-llvmDisassembler bindings look for libLLVM.dll
+      - name: Fetch prebuilt LLVM-C.dll
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        run: |
+          command -v zstd || choco install -y zstandard
+          curl -fsSL -o llvm.tar.zst "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/clang+llvm-$LLVM_VERSION-x86_64-pc-windows-msvc.tar.zst"
+          zstd -dc llvm.tar.zst | tar -x --wildcards '*/bin/LLVM-C.dll'
+          mkdir -p out
+          cp ./*/bin/LLVM-C.dll out/libLLVM.dll
+
+      # The official Linux and macOS releases only ship static libraries, so build
+      # a self-contained shared libLLVM with just the targets the VM simulator uses
+      - name: Install build tools
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then sudo apt-get update && sudo apt-get install -y ninja-build; else brew install ninja; fi
+
+      - name: Build shared libLLVM
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          curl -fsSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/llvm-project-$LLVM_VERSION.src.tar.xz" \
+            | tar -xJ --exclude='*/clang' --exclude='*/lldb' --exclude='*/mlir' --exclude='*/flang' --exclude='*/libcxx' --exclude='*/llvm/test'
+          cmake -S "llvm-project-$LLVM_VERSION.src/llvm" -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS" \
+            -DLLVM_BUILD_LLVM_DYLIB=ON \
+            -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_ENABLE_LIBEDIT=OFF -DLLVM_ENABLE_LIBPFM=OFF -DLLVM_ENABLE_Z3_SOLVER=OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF -DLLVM_ENABLE_BINDINGS=OFF \
+            -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_DOCS=OFF
+          cmake --build build --target LLVM
+          mkdir -p out
+          if [ "$RUNNER_OS" = Linux ]; then
+            cp -L build/lib/libLLVM.so out/libLLVM.so
+            strip --strip-unneeded out/libLLVM.so
+          else
+            cp -L build/lib/libLLVM.dylib out/libLLVM.dylib
+            strip -x out/libLLVM.dylib
+            codesign --force --sign - out/libLLVM.dylib
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llvm-${{ matrix.platform }}
+          path: out/*
+          if-no-files-found: error
+
+  test:
+    name: VMMaker tests (${{ matrix.platform }})
+    needs: [image, unicorn, llvm]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x86_64, os: ubuntu-latest }
+          - { platform: macos-arm64, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: run
+
+      - name: Put native libraries next to the image
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-${{ matrix.platform }}'
+          merge-multiple: true
+          path: run
+
+      - name: Download Pharo VM
+        working-directory: run
+        run: curl -fsSL https://get.pharo.org/64/vm130 | bash
+
+      - name: Run VMMaker tests
+        working-directory: run
+        timeout-minutes: 60
+        env:
+          PHARO_CI_TESTING_ENVIRONMENT: "true"
+        run: ./pharo "$IMAGE_NAME.image" test --junit-xml-output --fail-on-failure VMMakerTests Slang-Tests
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.platform }}
+          path: run/*.xml
+
+  # Unicorn cannot load on Windows yet (pharo-unicorn has no win32LibraryName),
+  # so only check that the image finds and uses the LLVM disassembler there
+  smoke-windows:
+    name: Smoke test (windows-x86_64)
+    needs: [image, unicorn, llvm]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: run
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-windows-x86_64'
+          merge-multiple: true
+          path: run
+
+      - name: Download Pharo VM
+        working-directory: run
+        run: curl -fsSL https://get.pharo.org/64/vm130 | bash
+
+      - name: Disassemble with LLVM
+        working-directory: run
+        run: |
+          ./pharo "$IMAGE_NAME.image" eval "(LLVMDisassembler amd64 disassembleInstructionIn: #[16r90] pc: 0) first" | tee out.txt
+          grep -q nop out.txt
+
+  bundle:
+    name: Bundle
+    needs: [test, smoke-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: ${{ env.IMAGE_NAME }}
+
+      # Library names do not clash across platforms, so all of them sit next to the image
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'unicorn-*'
+          merge-multiple: true
+          path: ${{ env.IMAGE_NAME }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'llvm-*'
+          merge-multiple: true
+          path: ${{ env.IMAGE_NAME }}
+
+      - name: Zip
+        id: zip
+        run: |
+          name="$IMAGE_NAME-${GITHUB_REF_NAME//\//-}.zip"
+          zip -r "$name" "$IMAGE_NAME"
+          unzip -l "$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'release'
+        with:
+          name: bundle
+          path: ${{ steps.zip.outputs.name }}
+          compression-level: 0
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.zip.outputs.name }}" --repo "$GITHUB_REPOSITORY" --clobber
