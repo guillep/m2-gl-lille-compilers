@@ -10,6 +10,11 @@ sourceDirectory := (env at: 'GITHUB_WORKSPACE') asFileReference / 'src'.
 Iceberg remoteTypeSelector: #httpsUrl.
 
 EpMonitor disableDuring: [
+	"Lock VMMaker so baselines that depend on it (e.g. BaselineOfSmiParser) keep this version"
+	Metacello new
+		baseline: 'VMMaker';
+		repository: vmmakerRepository;
+		lock.
 	Metacello new
 		baseline: 'VMMaker';
 		repository: vmmakerRepository;
@@ -22,4 +27,5 @@ EpMonitor disableDuring: [
 				Metacello new
 					baseline: (each basename allButFirst: 'BaselineOf' size);
 					repository: 'tonel://' , sourceDirectory fullName;
+					onLock: [ :ex :loaded :incoming | ex honor ];
 					load ] ] ].

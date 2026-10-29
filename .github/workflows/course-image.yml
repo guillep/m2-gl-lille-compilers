@@ -22,8 +22,9 @@ concurrency:
 
 env:
   IMAGE_NAME: CompilerCourse
-  # Same spec as BaselineOfSmiParser uses, so Metacello sees a single VMMaker repository
-  VMMAKER_REPOSITORY: github://pharo-project/pharo-vm:pharo-12
+  # Last pharo-12 commit whose VMMaker tests pass upstream (Jenkins build 144);
+  # the next one (PR #1115) breaks the Spur free-space tests
+  VMMAKER_REPOSITORY: github://pharo-project/pharo-vm:f6410817dc5d69d1f247bd3b415e83f5685cd384
   UNICORN_REPOSITORY: pharo-project/unicorn
   UNICORN_BRANCH: pharo-vm-unicorn2
   UNICORN_ARCHS: x86;arm;aarch64;riscv
@@ -258,7 +259,7 @@ jobs:
       - name: Disassemble with LLVM
         working-directory: run
         run: |
-          ./pharo "$IMAGE_NAME.image" eval "(LLVMDisassembler amd64 disassembleInstructionIn: #[16r90] pc: 0) first" | tee out.txt
+          ./pharo "$IMAGE_NAME.image" eval "(LLVMDisassembler amd64 disassembleInstructionIn: #[16r90] pc: 0) assembly" | tee out.txt
           grep -q nop out.txt
 
   bundle:
