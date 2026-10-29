@@ -83,10 +83,14 @@ jobs:
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          # Static CRT on Windows so the DLL does not need the VC++ redistributable
+          # Static CRT on Windows so the DLL does not need the VC++ redistributable.
+          # Unicorn only accepts it through CMAKE_C_FLAGS; -MT rather than /MT so
+          # Git Bash does not rewrite it into a path
+          extra=()
+          if [ "$RUNNER_OS" = Windows ]; then extra+=(-DCMAKE_C_FLAGS=-MT); fi
           cmake -S unicorn -B build -DCMAKE_BUILD_TYPE=Release \
             -DUNICORN_ARCH="$UNICORN_ARCHS" -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF \
-            -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            "${extra[@]}"
           cmake --build build --config Release --parallel
 
       # File names are the ones the pharo-unicorn bindings look for
@@ -133,7 +137,8 @@ jobs:
         run: |
           command -v zstd || choco install -y zstandard
           curl -fsSL -o llvm.tar.zst "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/clang+llvm-$LLVM_VERSION-x86_64-pc-windows-msvc.tar.zst"
-          zstd -dc llvm.tar.zst | tar -x --wildcards '*/bin/LLVM-C.dll'
+          # The archive is compressed with a 1 GB window
+          zstd -dc --long=31 llvm.tar.zst | tar -x --wildcards '*/bin/LLVM-C.dll'
           mkdir -p out
           cp ./*/bin/LLVM-C.dll out/libLLVM.dll
 
