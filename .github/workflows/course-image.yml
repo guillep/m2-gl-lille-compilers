@@ -200,7 +200,11 @@ jobs:
         include:
           - { platform: linux-x86_64, os: ubuntu-latest }
           - { platform: macos-arm64, os: macos-latest }
+          - { platform: windows-x86_64, os: windows-latest }
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -231,40 +235,9 @@ jobs:
           name: test-results-${{ matrix.platform }}
           path: run/*.xml
 
-  # Unicorn cannot load on Windows yet (pharo-unicorn has no win32LibraryName),
-  # so only check that the image finds and uses the LLVM disassembler there
-  smoke-windows:
-    name: Smoke test (windows-x86_64)
-    needs: [image, unicorn, llvm]
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: image
-          path: run
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: '*-windows-x86_64'
-          merge-multiple: true
-          path: run
-
-      - name: Download Pharo VM
-        working-directory: run
-        run: curl -fsSL https://get.pharo.org/64/vm130 | bash
-
-      - name: Disassemble with LLVM
-        working-directory: run
-        run: |
-          ./pharo "$IMAGE_NAME.image" eval "(LLVMDisassembler amd64 disassembleInstructionIn: #[16r90] pc: 0) assembly" | tee out.txt
-          grep -q nop out.txt
-
   bundle:
     name: Bundle
-    needs: [test, smoke-windows]
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
