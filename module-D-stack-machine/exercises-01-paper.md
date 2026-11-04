@@ -294,7 +294,7 @@ Given:
 b = 10
 c = 4
 d = 2
-INITIAL_STACK = [10]
+INITIAL_STACK = [3]
 
 RESULT = [42]
 ```
