@@ -202,10 +202,6 @@ jobs:
           - { platform: macos-arm64, os: macos-latest }
           - { platform: windows-x86_64, os: windows-latest }
     runs-on: ${{ matrix.os }}
-    # Six VMSnapshotPrimitiveTest errors on Windows come from a Pharo bug
-    # (WindowsStore>>pathFromString: mutates Symbol file names), so Windows
-    # does not block the bundle until that is fixed upstream
-    continue-on-error: ${{ matrix.platform == 'windows-x86_64' }}
     defaults:
       run:
         shell: bash
@@ -226,12 +222,23 @@ jobs:
         working-directory: run
         run: curl -fsSL https://get.pharo.org/64/vm130 | bash
 
+      # Six VMSnapshotPrimitiveTest errors on Windows come from a Pharo bug
+      # (WindowsStore>>pathFromString: mutates Symbol file names), so Windows
+      # does not block the bundle until that is fixed upstream
       - name: Run VMMaker tests
         working-directory: run
         timeout-minutes: 60
+        continue-on-error: ${{ runner.os == 'Windows' }}
         env:
           PHARO_CI_TESTING_ENVIRONMENT: "true"
         run: ./pharo "$IMAGE_NAME.image" test --junit-xml-output --fail-on-failure VMMakerTests Slang-Tests
+
+      - name: Run course tests
+        working-directory: run
+        timeout-minutes: 30
+        env:
+          PHARO_CI_TESTING_ENVIRONMENT: "true"
+        run: ./pharo "$IMAGE_NAME.image" test --junit-xml-output --fail-on-failure SmiRunner-Tests
 
       - uses: actions/upload-artifact@v4
         if: always()
