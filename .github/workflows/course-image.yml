@@ -274,6 +274,8 @@ jobs:
       - name: Zip
         id: zip
         run: |
+          # Pharo Launcher reads this to pick the VM for the image
+          echo 130 > "$IMAGE_NAME/pharo.version"
           name="$IMAGE_NAME-${GITHUB_REF_NAME//\//-}.zip"
           zip -r "$name" "$IMAGE_NAME"
           unzip -l "$name"
