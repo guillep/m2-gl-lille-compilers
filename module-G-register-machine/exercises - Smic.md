@@ -2,16 +2,9 @@
 
 In these exercises you will use the Pharo VM's Cogit assembler through
 `SmiCodeGenerator` to explore how simple integer operations are translated
-into machine code.
+into machine code. You will use the Smi image explained in the main README.
 
-```smalltalk
-Metacello new
-    baseline: 'SmiParser';
-    repository: 'github://guillep/compiler-course:main';
-    load.
-```
-
-The same programs can be assembled for different ISAs:
+Using this simulator, the same programs can be assembled for different ISAs:
 
 - AArch64
 - x64
